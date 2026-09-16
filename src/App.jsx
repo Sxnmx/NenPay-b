@@ -9,7 +9,7 @@ import Transactions from './Transactions';
 import Savings from './Savings';
 import Settings from './Settings';
 import { NenPayIcon } from './Logo';
-import { formatCurrency as formatCurrencyByCode } from './currency';
+import { formatCurrency as formatCurrencyByCode } from './Currency';
 import { useWindowSize } from './useWindowSize';
 
 function App() {
