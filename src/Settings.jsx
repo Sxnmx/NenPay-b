@@ -1,6 +1,137 @@
 import React, { useState } from 'react';
 import { NenPayIcon } from './Logo';
 import { useWindowSize } from './useWindowSize';
+import { useApp } from './AppContext';
+
+// ---- Inline Change PIN modal ----
+const ChangePinModal = ({ isOpen, onClose, onSave, colors }) => {
+  const [stage, setStage] = useState('current'); // current | new | confirm
+  const [current, setCurrent] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const { verifyPin } = useApp();
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setStage('current');
+      setCurrent(''); setNewPin(''); setConfirm(''); setError('');
+    }
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    if (current.length === 4) {
+      if (verifyPin(current)) { setError(''); setStage('new'); }
+      else { setError('Current PIN is incorrect'); setCurrent(''); }
+    }
+  }, [current]);
+
+  React.useEffect(() => {
+    if (newPin.length === 4) {
+      setError(''); setStage('confirm');
+    }
+  }, [newPin]);
+
+  React.useEffect(() => {
+    if (confirm.length === 4) {
+      if (confirm === newPin) { onSave(newPin); }
+      else { setError('PINs do not match. Try again.'); setConfirm(''); setNewPin(''); setStage('new'); }
+    }
+  }, [confirm]);
+
+  if (!isOpen) return null;
+
+  const value = stage === 'current' ? current : stage === 'new' ? newPin : confirm;
+  const setValue = stage === 'current' ? setCurrent : stage === 'new' ? setNewPin : setConfirm;
+  const title = stage === 'current' ? 'Enter Current PIN' : stage === 'new' ? 'Set New PIN' : 'Confirm New PIN';
+  const subtitle = stage === 'current' ? 'Verify it\'s really you' : stage === 'new' ? 'Choose a 4-digit PIN' : 'Enter the new PIN again';
+
+  const press = (d) => { if (value.length < 4) setValue(value + d); };
+  const back = () => setValue(value.slice(0, -1));
+  const keypad = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.75)',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        zIndex: 9500, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        animation: 'fadeIn 0.2s ease',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: '460px',
+          background: colors.card,
+          borderTopLeftRadius: '24px', borderTopRightRadius: '24px',
+          border: `1px solid ${colors.border}`,
+          padding: '24px 20px calc(24px + var(--safe-bottom))',
+          animation: 'slideUp 0.3s ease', boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <div style={{ fontSize: '30px', marginBottom: '8px' }}>🔑</div>
+          <h3 style={{ color: colors.text, fontSize: '18px', fontWeight: '700', marginBottom: '6px' }}>{title}</h3>
+          <p style={{ color: colors.textSecondary, fontSize: '13px' }}>{subtitle}</p>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '20px' }}>
+          {[0,1,2,3].map((i) => (
+            <div key={i} style={{
+              width: '16px', height: '16px', borderRadius: '50%',
+              background: value.length > i ? '#0066ff' : 'transparent',
+              border: `2px solid ${value.length > i ? '#0066ff' : colors.border}`,
+              boxShadow: value.length > i ? '0 0 10px rgba(0,102,255,0.6)' : 'none',
+              transition: 'all 0.15s ease',
+            }} />
+          ))}
+        </div>
+
+        {error && (
+          <div style={{ color: '#ff5252', fontSize: '13px', textAlign: 'center', marginBottom: '12px', fontWeight: '600' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+          {keypad.map((k, i) => {
+            if (k === '') return <div key={i} />;
+            const isBack = k === '⌫';
+            return (
+              <button
+                key={i}
+                onClick={() => (isBack ? back() : press(k))}
+                style={{
+                  height: '56px', borderRadius: '16px',
+                  border: `1px solid ${colors.border}`,
+                  background: colors.hover, color: colors.text,
+                  fontSize: isBack ? '22px' : '22px', fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                {k}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%', marginTop: '14px', padding: '14px',
+            borderRadius: '12px', border: 'none', background: 'transparent',
+            color: colors.textSecondary, fontWeight: '600', cursor: 'pointer', fontSize: '14px',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const Settings = ({ 
   isDarkMode, 
@@ -11,9 +142,12 @@ const Settings = ({
   setCurrency,
   userName,
   setUserName,
+  showToast,
 }) => {
   const { isMobile } = useWindowSize();
-  
+  const { setPin } = useApp();
+  const [showChangePin, setShowChangePin] = useState(false);
+
   const [profileData, setProfileData] = useState({
     fullName: userName || 'Sanmi Ajimajasan',
     email: 'sanmi@nenpay.com',
@@ -72,7 +206,6 @@ const Settings = ({
     internationalPayments: false,
   });
 
-  // null = menu view, non-null = section view
   const [activeSection, setActiveSection] = useState(null);
 
   const sections = [
@@ -139,6 +272,7 @@ const Settings = ({
         position: 'relative',
         transition: 'background 0.3s ease',
         flexShrink: 0,
+        minHeight: 'auto',
       }}
     >
       <div style={{
@@ -206,47 +340,45 @@ const Settings = ({
     switch (activeSection) {
       case 'general':
         return (
-          <>
-            <div style={cardStyle}>
-              <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>General Settings</h3>
-              <label style={labelStyle}>Language</label>
-              <select value={general.language} onChange={(e) => setGeneral({ ...general, language: e.target.value })} style={inputStyle}>
-                <option>English</option>
-                <option>Yoruba</option>
-                <option>Igbo</option>
-                <option>Hausa</option>
-                <option>French</option>
-                <option>Spanish</option>
-              </select>
-              <label style={labelStyle}>Currency</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={inputStyle}>
-                <option value="NGN">NGN - Nigerian Naira (₦)</option>
-                <option value="USD">USD - US Dollar ($)</option>
-                <option value="EUR">EUR - Euro (€)</option>
-                <option value="GBP">GBP - British Pound (£)</option>
-                <option value="ZAR">ZAR - South African Rand (R)</option>
-                <option value="GHS">GHS - Ghanaian Cedi (₵)</option>
-                <option value="KES">KES - Kenyan Shilling (KSh)</option>
-                <option value="CAD">CAD - Canadian Dollar (C$)</option>
-                <option value="AUD">AUD - Australian Dollar (A$)</option>
-                <option value="JPY">JPY - Japanese Yen (¥)</option>
-                <option value="CNY">CNY - Chinese Yuan (¥)</option>
-                <option value="INR">INR - Indian Rupee (₹)</option>
-              </select>
-              <label style={labelStyle}>Timezone</label>
-              <select value={general.timezone} onChange={(e) => setGeneral({ ...general, timezone: e.target.value })} style={inputStyle}>
-                <option>Africa/Lagos (GMT+1)</option>
-                <option>Africa/Accra (GMT+0)</option>
-                <option>Africa/Nairobi (GMT+3)</option>
-                <option>Europe/London (GMT+0)</option>
-                <option>America/New_York (GMT-5)</option>
-              </select>
-              {settingRow('🔄', 'Auto Update', 'Automatically update the app', general.autoUpdate, () => toggleSetting('general', 'autoUpdate'))}
-              {settingRow('📊', 'Data Saver', 'Reduce data usage', general.dataUsage, () => toggleSetting('general', 'dataUsage'))}
-              {settingRow('📳', 'Haptic Feedback', 'Vibration on interactions', general.hapticFeedback, () => toggleSetting('general', 'hapticFeedback'))}
-              {settingRow('🔊', 'Sound Effects', 'Play sounds on actions', general.soundEffects, () => toggleSetting('general', 'soundEffects'))}
-            </div>
-          </>
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>General Settings</h3>
+            <label style={labelStyle}>Language</label>
+            <select value={general.language} onChange={(e) => setGeneral({ ...general, language: e.target.value })} style={inputStyle}>
+              <option>English</option>
+              <option>Yoruba</option>
+              <option>Igbo</option>
+              <option>Hausa</option>
+              <option>French</option>
+              <option>Spanish</option>
+            </select>
+            <label style={labelStyle}>Currency</label>
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={inputStyle}>
+              <option value="NGN">NGN - Nigerian Naira (₦)</option>
+              <option value="USD">USD - US Dollar ($)</option>
+              <option value="EUR">EUR - Euro (€)</option>
+              <option value="GBP">GBP - British Pound (£)</option>
+              <option value="ZAR">ZAR - South African Rand (R)</option>
+              <option value="GHS">GHS - Ghanaian Cedi (₵)</option>
+              <option value="KES">KES - Kenyan Shilling (KSh)</option>
+              <option value="CAD">CAD - Canadian Dollar (C$)</option>
+              <option value="AUD">AUD - Australian Dollar (A$)</option>
+              <option value="JPY">JPY - Japanese Yen (¥)</option>
+              <option value="CNY">CNY - Chinese Yuan (¥)</option>
+              <option value="INR">INR - Indian Rupee (₹)</option>
+            </select>
+            <label style={labelStyle}>Timezone</label>
+            <select value={general.timezone} onChange={(e) => setGeneral({ ...general, timezone: e.target.value })} style={inputStyle}>
+              <option>Africa/Lagos (GMT+1)</option>
+              <option>Africa/Accra (GMT+0)</option>
+              <option>Africa/Nairobi (GMT+3)</option>
+              <option>Europe/London (GMT+0)</option>
+              <option>America/New_York (GMT-5)</option>
+            </select>
+            {settingRow('🔄', 'Auto Update', 'Automatically update the app', general.autoUpdate, () => toggleSetting('general', 'autoUpdate'))}
+            {settingRow('📊', 'Data Saver', 'Reduce data usage', general.dataUsage, () => toggleSetting('general', 'dataUsage'))}
+            {settingRow('📳', 'Haptic Feedback', 'Vibration on interactions', general.hapticFeedback, () => toggleSetting('general', 'hapticFeedback'))}
+            {settingRow('🔊', 'Sound Effects', 'Play sounds on actions', general.soundEffects, () => toggleSetting('general', 'soundEffects'))}
+          </div>
         );
 
       case 'profile':
@@ -258,6 +390,7 @@ const Settings = ({
                   width: '70px', height: '70px', borderRadius: '50%',
                   background: '#0066ff', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', fontSize: '30px',
+                  flexShrink: 0,
                 }}>
                   👤
                 </div>
@@ -283,10 +416,18 @@ const Settings = ({
                 <option>Other</option>
                 <option>Prefer not to say</option>
               </select>
-              <button style={{
-                width: '100%', padding: '14px', borderRadius: '10px', border: 'none',
-                background: '#0066ff', color: 'white', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px',
-              }}>
+              <button
+                onClick={() => {
+                  setUserName(profileData.fullName);
+                  showToast('Profile updated', 'success');
+                }}
+                style={{
+                  width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
+                  background: 'linear-gradient(135deg, #0066ff, #00b4ff)',
+                  color: 'white', fontWeight: '700', cursor: 'pointer', marginTop: '10px',
+                  boxShadow: '0 8px 20px rgba(0,102,255,0.3)',
+                }}
+              >
                 Save Changes
               </button>
             </div>
@@ -313,13 +454,13 @@ const Settings = ({
             </div>
             <div style={cardStyle}>
               <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>🔑 Password & PIN</h3>
-              {actionRow('🔑', 'Change Password', () => alert('Change Password'))}
-              {actionRow('🔢', 'Change Transaction PIN', () => alert('Change PIN'))}
+              {actionRow('🔑', 'Change Password', () => showToast('Change Password coming soon', 'info'))}
+              {actionRow('🔢', 'Change Transaction PIN', () => setShowChangePin(true))}
             </div>
             <div style={cardStyle}>
               <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>⚠️ Danger Zone</h3>
-              {actionRow('🚫', 'Deactivate Account', () => alert('Deactivate'), '#ff9800')}
-              {actionRow('🗑️', 'Delete Account', () => alert('Delete'), '#ff5252')}
+              {actionRow('🚫', 'Deactivate Account', () => showToast('Deactivate Account coming soon', 'warning'), '#ff9800')}
+              {actionRow('🗑️', 'Delete Account', () => showToast('Delete Account coming soon', 'error'), '#ff5252')}
             </div>
           </>
         );
@@ -421,15 +562,15 @@ const Settings = ({
             </div>
             <div style={cardStyle}>
               <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>ℹ️ About</h3>
-              {actionRow('📋', 'Terms of Service', () => alert('Terms'))}
-              {actionRow('📄', 'Privacy Policy', () => alert('Privacy'))}
-              {actionRow('⭐', 'Rate Us', () => alert('Rate Us'))}
+              {actionRow('📋', 'Terms of Service', () => showToast('Terms of Service', 'info'))}
+              {actionRow('📄', 'Privacy Policy', () => showToast('Privacy Policy', 'info'))}
+              {actionRow('⭐', 'Rate Us', () => showToast('Thanks for the support!', 'success'))}
             </div>
             <div style={cardStyle}>
               <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>🆘 Help & Support</h3>
-              {actionRow('💬', 'Live Chat', () => alert('Chat'))}
-              {actionRow('📞', 'Call Customer Care', () => alert('Calling...'))}
-              {actionRow('📧', 'Email Support', () => alert('Email'))}
+              {actionRow('💬', 'Live Chat', () => showToast('Live Chat opening...', 'info'))}
+              {actionRow('📞', 'Call Customer Care', () => showToast('Calling +234 700 NENPAY...', 'info'))}
+              {actionRow('📧', 'Email Support', () => showToast('Opening mail app...', 'info'))}
             </div>
             <div style={cardStyle}>
               <h3 style={{ fontSize: '16px', marginBottom: '15px', color: colors.text }}>📞 Contact</h3>
@@ -451,28 +592,18 @@ const Settings = ({
   if (activeSection !== null) {
     const currentSection = sections.find(s => s.id === activeSection);
     return (
-      <div style={{ padding: isMobile ? '0' : '0' }}>
-        {/* Back button + title */}
+      <div>
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          marginBottom: '20px',
+          display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px',
         }}>
           <button
             onClick={() => setActiveSection(null)}
             style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
+              width: '44px', height: '44px', borderRadius: '50%',
               border: `1px solid ${colors.border}`,
-              background: colors.card,
-              color: colors.text,
-              cursor: 'pointer',
-              fontSize: '18px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              background: colors.card, color: colors.text,
+              cursor: 'pointer', fontSize: '18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0,
             }}
           >
@@ -480,50 +611,30 @@ const Settings = ({
           </button>
           <div style={{ minWidth: 0 }}>
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
+              display: 'flex', alignItems: 'center', gap: '8px',
               fontSize: isMobile ? '20px' : '24px',
-              fontWeight: '700',
-              color: colors.text,
+              fontWeight: '700', color: colors.text,
             }}>
               <span>{currentSection.icon}</span>
               <span>{currentSection.label}</span>
             </div>
-            <div style={{
-              fontSize: '12px',
-              color: colors.textSecondary,
-              marginTop: '2px',
-            }}>
+            <div style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '2px' }}>
               {currentSection.description}
             </div>
           </div>
         </div>
 
-        {/* Section content */}
-        <div>
-          {renderSection()}
-        </div>
+        <div>{renderSection()}</div>
 
-        {/* Logout at bottom (only on About section) */}
         {activeSection === 'about' && (
           <button
             onClick={handleLogout}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              width: '100%',
-              padding: '15px',
-              marginTop: '20px',
-              borderRadius: '12px',
-              border: 'none',
-              background: '#ff5252',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '15px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: '10px', width: '100%', padding: '16px', marginTop: '20px',
+              borderRadius: '12px', border: 'none',
+              background: '#ff5252', color: 'white',
+              cursor: 'pointer', fontWeight: 'bold', fontSize: '15px',
             }}
           >
             🚪 Logout
@@ -533,7 +644,7 @@ const Settings = ({
     );
   }
 
-  // ============ MENU VIEW (list of settings) ============
+  // ============ MENU VIEW ============
   return (
     <div>
       <h1 style={{ fontSize: isMobile ? '22px' : '28px', marginBottom: '8px', color: colors.text }}>
@@ -555,18 +666,11 @@ const Settings = ({
             key={section.id}
             onClick={() => setActiveSection(section.id)}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
-              padding: '18px 20px',
-              border: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '18px 20px', border: 'none',
               borderBottom: index < sections.length - 1 ? `1px solid ${colors.border}` : 'none',
-              background: 'transparent',
-              color: colors.text,
-              cursor: 'pointer',
-              textAlign: 'left',
-              boxSizing: 'border-box',
+              background: 'transparent', color: colors.text,
+              cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0 }}>
@@ -575,11 +679,7 @@ const Settings = ({
                 <div style={{ fontWeight: '600', fontSize: '15px', color: colors.text }}>
                   {section.label}
                 </div>
-                <div style={{
-                  color: colors.textSecondary,
-                  fontSize: '12px',
-                  marginTop: '2px',
-                }}>
+                <div style={{ color: colors.textSecondary, fontSize: '12px', marginTop: '2px' }}>
                   {section.description}
                 </div>
               </div>
@@ -589,27 +689,29 @@ const Settings = ({
         ))}
       </div>
 
-      {/* Logout button */}
       <button
         onClick={handleLogout}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '10px',
-          width: '100%',
-          padding: '15px',
-          borderRadius: '12px',
-          border: 'none',
-          background: '#ff5252',
-          color: 'white',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          fontSize: '15px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: '10px', width: '100%', padding: '16px',
+          borderRadius: '12px', border: 'none',
+          background: '#ff5252', color: 'white',
+          cursor: 'pointer', fontWeight: 'bold', fontSize: '15px',
         }}
       >
         🚪 Logout
       </button>
+
+      <ChangePinModal
+        isOpen={showChangePin}
+        onClose={() => setShowChangePin(false)}
+        onSave={(newPin) => {
+          setPin(newPin);
+          setShowChangePin(false);
+          showToast('Transaction PIN updated', 'success');
+        }}
+        colors={colors}
+      />
     </div>
   );
 };

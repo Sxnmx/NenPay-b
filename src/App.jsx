@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
+import BottomNav from './BottomNav';
 import Dashboard from './Dashboard';
 import SendMoney from './SendMoney';
 import Airtime from './Airtime';
@@ -8,40 +9,61 @@ import Account from './Account';
 import Transactions from './Transactions';
 import Savings from './Savings';
 import Settings from './Settings';
+import PinModal from './PinModal';
 import { NenPayIcon } from './Logo';
-import { formatCurrency as formatCurrencyByCode } from './Currency';
+import { useApp } from './AppContext';
+import { useToast } from './Toast';
 import { useWindowSize } from './useWindowSize';
 
 function App() {
   const { isMobile } = useWindowSize();
+  const {
+    isLoggedIn,
+    userName,
+    isDarkMode,
+    currency,
+    balance,
+    transactions,
+    savingsGoals,
+    colors,
+    formatCurrency,
+    login,
+    logout,
+    toggleDarkMode,
+    setCurrency,
+    setUserName,
+    addTransaction,
+    updateSavingsGoals,
+    verifyPin,
+  } = useApp();
+  const { showToast } = useToast();
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activePage, setActivePage] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showBalance, setShowBalance] = useState(true);
+
+  // PIN gate state (shared across pages via context below)
+  const [pinConfig, setPinConfig] = useState({ isOpen: false, onSuccess: null, title: undefined, subtitle: undefined });
+
+  const requirePin = (onSuccess, title, subtitle) => {
+    setPinConfig({ isOpen: true, onSuccess, title, subtitle });
+  };
+  const closePin = () => setPinConfig({ isOpen: false, onSuccess: null });
+
+  // Login form state
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [userName, setUserName] = useState('Sanmi Ajimajasan');
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [activePage, setActivePage] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [balance, setBalance] = useState(730453340.34);
-  const [showBalance, setShowBalance] = useState(true);
-  const [currency, setCurrency] = useState('NGN');
-  const [transactions, setTransactions] = useState([
-    { id: 1, name: 'Amazon Purchase', amount: -150.00, date: 'Today, 2:30 PM', type: 'expense', category: 'Shopping', icon: '🛒' },
-    { id: 2, name: 'Salary Deposit', amount: 4500.00, date: 'Yesterday, 9:00 AM', type: 'income', category: 'Income', icon: '💰' },
-    { id: 3, name: 'Airtime Purchase', amount: -50.00, date: 'Yesterday, 6:45 PM', type: 'expense', category: 'Airtime', icon: '📱' },
-    { id: 4, name: 'Uber Ride', amount: -25.50, date: 'Jan 13, 8:15 PM', type: 'expense', category: 'Transport', icon: '🚗' },
-  ]);
+  const [showDemoCredentials, setShowDemoCredentials] = useState(false);
 
   const demoCredentials = [
     { email: 'sanmi@nenpay.com', password: 'sanmi123', name: 'Sanmi Ajimajasan' },
     { email: 'admin@nenpay.com', password: 'admin123', name: 'Admin User' },
   ];
 
-  const [showDemoCredentials, setShowDemoCredentials] = useState(false);
-
+  // On mobile: sidebar is always drawer-based
   useEffect(() => {
     if (isMobile) {
       setSidebarOpen(false);
@@ -50,115 +72,79 @@ function App() {
     }
   }, [isMobile]);
 
-  const theme = {
-    dark: {
-      background: '#000000',
-      sidebar: '#0a0a0a',
-      card: '#0a0a0a',
-      border: '#1a1a1a',
-      text: '#ffffff',
-      textSecondary: '#888888',
-      inputBackground: '#000000',
-      hover: '#111111',
-    },
-    light: {
-      background: '#f5f5f5',
-      sidebar: '#ffffff',
-      card: '#ffffff',
-      border: '#e0e0e0',
-      text: '#000000',
-      textSecondary: '#666666',
-      inputBackground: '#ffffff',
-      hover: '#f0f0f0',
-    }
-  };
-
-  const colors = isDarkMode ? theme.dark : theme.light;
-
-  const formatCurrency = (amountInNGN) => {
-    return formatCurrencyByCode(amountInNGN, currency);
-  };
+  // Scroll to top when page changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activePage]);
 
   const handleEmailChange = (e) => {
     const email = e.target.value;
-    setLoginData({ ...loginData, email });
+    setLoginData((d) => ({ ...d, email }));
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (email && !emailRegex.test(email)) {
-      setEmailError('Please enter a valid email address');
-    } else {
-      setEmailError('');
-    }
+    if (email && !emailRegex.test(email)) setEmailError('Please enter a valid email address');
+    else setEmailError('');
   };
 
   const handlePasswordChange = (e) => {
     const password = e.target.value;
-    setLoginData({ ...loginData, password });
-    if (password && password.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
-    } else {
-      setPasswordError('');
-    }
+    setLoginData((d) => ({ ...d, password }));
+    if (password && password.length < 6) setPasswordError('Password must be at least 6 characters');
+    else setPasswordError('');
   };
 
   const handleLogin = (e) => {
     e.preventDefault();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!loginData.email) { setLoginError('Email is required'); return; }
-    if (!emailRegex.test(loginData.email)) { setLoginError('Please enter a valid email address'); return; }
-    if (!loginData.password) { setLoginError('Password is required'); return; }
-    if (loginData.password.length < 6) { setLoginError('Password must be at least 6 characters'); return; }
+    if (!loginData.email) return setLoginError('Email is required');
+    if (!emailRegex.test(loginData.email)) return setLoginError('Please enter a valid email address');
+    if (!loginData.password) return setLoginError('Password is required');
+    if (loginData.password.length < 6) return setLoginError('Password must be at least 6 characters');
 
     const user = demoCredentials.find(
-      u => u.email === loginData.email.toLowerCase() && u.password === loginData.password
+      (u) => u.email === loginData.email.toLowerCase() && u.password === loginData.password
     );
 
     if (user) {
-      setIsLoggedIn(true);
-      setUserName(user.name);
+      login(user);
       setLoginError('');
       setEmailError('');
       setPasswordError('');
       setLoginData({ email: '', password: '' });
+      showToast(`Welcome back, ${user.name.split(' ')[0]}!`, 'success');
     } else {
       setLoginError('Invalid email or password. Try sanmi@nenpay.com / sanmi123');
     }
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
-    setLoginData({ email: '', password: '' });
+    logout();
     setActivePage('dashboard');
-  };
-
-  const addTransaction = (transaction) => {
-    setTransactions([transaction, ...transactions]);
-    if (transaction.type === 'expense') {
-      setBalance(balance - Math.abs(transaction.amount));
-    } else if (transaction.type === 'income') {
-      setBalance(balance + Math.abs(transaction.amount));
-    }
+    showToast('Logged out', 'info');
   };
 
   // ============ LOGIN PAGE ============
   if (!isLoggedIn) {
     return (
       <div style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         background: isDarkMode ? '#000000' : '#f5f5f5',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '20px',
+        paddingTop: 'calc(20px + var(--safe-top))',
+        paddingBottom: 'calc(20px + var(--safe-bottom))',
         position: 'relative',
       }}>
         <button
-          onClick={() => setIsDarkMode(!isDarkMode)}
+          onClick={toggleDarkMode}
+          aria-label="Toggle theme"
           style={{
             position: 'absolute',
-            top: '20px',
+            top: 'calc(20px + var(--safe-top))',
             right: '20px',
-            width: '40px',
-            height: '40px',
+            width: '44px',
+            height: '44px',
             borderRadius: '50%',
             border: `1px solid ${colors.border}`,
             background: colors.card,
@@ -173,18 +159,19 @@ function App() {
           background: colors.card,
           border: `1px solid ${colors.border}`,
           borderRadius: '24px',
-          padding: isMobile ? '30px 20px' : '40px',
+          padding: isMobile ? '28px 20px' : '40px',
           width: '100%',
-          maxWidth: '400px',
+          maxWidth: '420px',
           boxSizing: 'border-box',
+          animation: 'slideUp 0.4s ease',
         }}>
-          <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '15px' }}>
-              <NenPayIcon size={80} animated={true} />
+          <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+              <NenPayIcon size={72} animated={true} />
             </div>
             <h1 style={{
               color: colors.text,
-              fontSize: '32px',
+              fontSize: '30px',
               fontWeight: '800',
               letterSpacing: '-0.5px',
               marginBottom: '8px',
@@ -197,7 +184,7 @@ function App() {
               fontSize: '11px',
               letterSpacing: '1.5px',
               fontWeight: '600',
-              marginBottom: '15px',
+              marginBottom: '14px',
             }}>
               BANKING MADE SIMPLE
             </p>
@@ -207,12 +194,10 @@ function App() {
           </div>
 
           <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '18px' }}>
               <label style={{
-                display: 'block',
-                marginBottom: '8px',
-                color: colors.textSecondary,
-                fontSize: '14px',
+                display: 'block', marginBottom: '8px',
+                color: colors.textSecondary, fontSize: '14px', fontWeight: '500',
               }}>
                 Email Address
               </label>
@@ -221,6 +206,8 @@ function App() {
                 placeholder="Enter your email"
                 value={loginData.email}
                 onChange={handleEmailChange}
+                autoComplete="email"
+                inputMode="email"
                 required
                 style={{
                   width: '100%',
@@ -235,18 +222,16 @@ function App() {
                 }}
               />
               {emailError && (
-                <div style={{ color: '#ff5252', fontSize: '12px', marginTop: '5px' }}>
+                <div style={{ color: '#ff5252', fontSize: '12px', marginTop: '6px' }}>
                   ⚠️ {emailError}
                 </div>
               )}
             </div>
 
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '18px' }}>
               <label style={{
-                display: 'block',
-                marginBottom: '8px',
-                color: colors.textSecondary,
-                fontSize: '14px',
+                display: 'block', marginBottom: '8px',
+                color: colors.textSecondary, fontSize: '14px', fontWeight: '500',
               }}>
                 Password
               </label>
@@ -256,6 +241,7 @@ function App() {
                   placeholder="Enter your password"
                   value={loginData.password}
                   onChange={handlePasswordChange}
+                  autoComplete="current-password"
                   required
                   style={{
                     width: '100%',
@@ -273,22 +259,28 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label="Toggle password visibility"
                   style={{
                     position: 'absolute',
-                    right: '10px',
+                    right: '6px',
                     top: '50%',
                     transform: 'translateY(-50%)',
                     background: 'transparent',
                     border: 'none',
                     cursor: 'pointer',
                     fontSize: '20px',
+                    width: '44px',
+                    height: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
                   {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
               </div>
               {passwordError && (
-                <div style={{ color: '#ff5252', fontSize: '12px', marginTop: '5px' }}>
+                <div style={{ color: '#ff5252', fontSize: '12px', marginTop: '6px' }}>
                   ⚠️ {passwordError}
                 </div>
               )}
@@ -297,12 +289,12 @@ function App() {
             {loginError && (
               <div style={{
                 padding: '12px',
-                marginBottom: '20px',
+                marginBottom: '18px',
                 borderRadius: '10px',
                 background: 'rgba(255, 82, 82, 0.1)',
                 border: '1px solid #ff5252',
                 color: '#ff5252',
-                fontSize: '14px',
+                fontSize: '13px',
                 textAlign: 'center',
               }}>
                 ❌ {loginError}
@@ -313,21 +305,22 @@ function App() {
               type="submit"
               style={{
                 width: '100%',
-                padding: '15px',
+                padding: '16px',
                 borderRadius: '12px',
                 border: 'none',
-                background: '#0066ff',
+                background: 'linear-gradient(135deg, #0066ff 0%, #00b4ff 100%)',
                 color: 'white',
                 fontWeight: 'bold',
                 fontSize: '16px',
                 cursor: 'pointer',
+                boxShadow: '0 8px 24px rgba(0, 102, 255, 0.35)',
               }}
             >
               Login
             </button>
           </form>
 
-          <div style={{ marginTop: '20px', textAlign: 'center' }}>
+          <div style={{ marginTop: '18px', textAlign: 'center' }}>
             <button
               onClick={() => setShowDemoCredentials(!showDemoCredentials)}
               style={{
@@ -336,6 +329,8 @@ function App() {
                 color: '#0066ff',
                 cursor: 'pointer',
                 fontSize: '14px',
+                minHeight: 'auto',
+                padding: '8px',
               }}
             >
               {showDemoCredentials ? 'Hide Demo Credentials' : 'Show Demo Credentials'}
@@ -344,11 +339,12 @@ function App() {
             {showDemoCredentials && (
               <div style={{
                 marginTop: '10px',
-                padding: '15px',
+                padding: '14px',
                 background: colors.hover,
                 borderRadius: '10px',
                 fontSize: '12px',
                 color: colors.textSecondary,
+                textAlign: 'left',
               }}>
                 <div style={{ fontWeight: 'bold', marginBottom: '8px', color: colors.text }}>
                   Demo Credentials:
@@ -356,8 +352,15 @@ function App() {
                 <div style={{ marginBottom: '5px' }}>
                   Email: <span style={{ color: '#0066ff' }}>sanmi@nenpay.com</span>
                 </div>
-                <div>
+                <div style={{ marginBottom: '5px' }}>
                   Password: <span style={{ color: '#0066ff' }}>sanmi123</span>
+                </div>
+                <div style={{
+                  marginTop: '10px', paddingTop: '10px',
+                  borderTop: `1px solid ${colors.border}`,
+                  color: colors.textSecondary,
+                }}>
+                  Transaction PIN: <span style={{ color: '#0066ff' }}>1234</span>
                 </div>
               </div>
             )}
@@ -368,9 +371,11 @@ function App() {
   }
 
   // ============ MAIN APP ============
+  const pageTitle = activePage.charAt(0).toUpperCase() + activePage.slice(1);
+
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100dvh',
       background: colors.background,
       display: 'flex',
       color: colors.text,
@@ -388,9 +393,10 @@ function App() {
       <div style={{
         flex: 1,
         marginLeft: isMobile ? '0' : (sidebarOpen ? '260px' : '80px'),
-        padding: isMobile ? '15px' : '30px',
-        paddingTop: isMobile ? '15px' : '30px',
-        minHeight: '100vh',
+        padding: isMobile ? '16px' : '30px',
+        paddingTop: `calc(${isMobile ? '16px' : '30px'} + var(--safe-top))`,
+        paddingBottom: isMobile ? 'calc(96px + var(--safe-bottom))' : '30px',
+        minHeight: '100dvh',
         transition: 'margin-left 0.3s ease',
         width: '100%',
         boxSizing: 'border-box',
@@ -401,7 +407,7 @@ function App() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: isMobile ? '20px' : '30px',
+          marginBottom: isMobile ? '18px' : '30px',
           gap: '10px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
@@ -412,22 +418,15 @@ function App() {
                   {activePage === 'dashboard' ? (
                     <>
                       <div style={{
-                        fontSize: '12px',
-                        color: colors.textSecondary,
-                        fontWeight: '500',
-                        marginBottom: '2px',
+                        fontSize: '12px', color: colors.textSecondary,
+                        fontWeight: '500', marginBottom: '2px',
                       }}>
                         Welcome Back,
                       </div>
                       <div style={{
-                        fontSize: '18px',
-                        fontWeight: '800',
-                        letterSpacing: '-0.3px',
-                        lineHeight: 1.1,
-                        color: colors.text,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        fontSize: '17px', fontWeight: '800', letterSpacing: '-0.3px',
+                        lineHeight: 1.1, color: colors.text,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
                         {userName.split(' ')[0]}! 👋
                       </div>
@@ -435,20 +434,15 @@ function App() {
                   ) : (
                     <>
                       <div style={{
-                        fontSize: '20px',
-                        fontWeight: '800',
-                        letterSpacing: '-0.5px',
-                        lineHeight: 1,
+                        fontSize: '19px', fontWeight: '800',
+                        letterSpacing: '-0.5px', lineHeight: 1,
                       }}>
                         <span style={{ color: '#0066ff' }}>Nen</span>
                         <span style={{ color: colors.text }}>Pay</span>
                       </div>
                       <div style={{
-                        fontSize: '9px',
-                        letterSpacing: '1px',
-                        color: colors.textSecondary,
-                        fontWeight: '600',
-                        marginTop: '3px',
+                        fontSize: '9px', letterSpacing: '1px',
+                        color: colors.textSecondary, fontWeight: '600', marginTop: '3px',
                       }}>
                         BANKING MADE SIMPLE
                       </div>
@@ -457,99 +451,59 @@ function App() {
                 </div>
               </>
             ) : (
-              <div>
-                <h1 style={{
-                  fontSize: '28px',
-                  marginBottom: '5px',
-                  color: colors.text,
-                }}>
-                  {activePage === 'dashboard'
-                    ? `Welcome Back, ${userName.split(' ')[0]}! 👋`
-                    : (
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                        <span style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
-                          <span style={{ color: '#0066ff' }}>Nen</span>
-                          <span style={{ color: colors.text }}>Pay</span>
-                        </span>
-                        <span style={{
-                          fontSize: '14px',
-                          color: colors.textSecondary,
-                          fontWeight: '500',
-                        }}>
-                          • {activePage.charAt(0).toUpperCase() + activePage.slice(1)}
-                        </span>
-                      </div>
-                    )
-                  }
-                </h1>
-              </div>
+              <h1 style={{ fontSize: '28px', marginBottom: '5px', color: colors.text }}>
+                {activePage === 'dashboard' ? (
+                  `Welcome Back, ${userName.split(' ')[0]}! 👋`
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                    <span style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.5px' }}>
+                      <span style={{ color: '#0066ff' }}>Nen</span>
+                      <span style={{ color: colors.text }}>Pay</span>
+                    </span>
+                    <span style={{ fontSize: '14px', color: colors.textSecondary, fontWeight: '500' }}>
+                      • {pageTitle}
+                    </span>
+                  </div>
+                )}
+              </h1>
             )}
           </div>
 
-          {/* Right side buttons */}
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-            {isMobile && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                style={{
-                  width: '42px',
-                  height: '42px',
-                  borderRadius: '50%',
-                  background: colors.card,
-                  border: `1px solid ${colors.border}`,
-                  cursor: 'pointer',
-                  fontSize: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: colors.text,
-                }}
-              >
-                ☰
-              </button>
-            )}
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
+              onClick={toggleDarkMode}
+              aria-label="Toggle theme"
               style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '50%',
-                background: colors.card,
-                border: `1px solid ${colors.border}`,
-                cursor: 'pointer',
-                fontSize: '18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                width: '42px', height: '42px', borderRadius: '50%',
+                background: colors.card, border: `1px solid ${colors.border}`,
+                cursor: 'pointer', fontSize: '18px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
               {isDarkMode ? '🌙' : '☀️'}
             </button>
-            <button style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '50%',
-              background: colors.card,
-              border: `1px solid ${colors.border}`,
-              cursor: 'pointer',
-              fontSize: '18px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
+            <button
+              aria-label="Notifications"
+              style={{
+                width: '42px', height: '42px', borderRadius: '50%',
+                background: colors.card, border: `1px solid ${colors.border}`,
+                cursor: 'pointer', fontSize: '18px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              onClick={() => showToast('No new notifications', 'info')}
+            >
               🔔
             </button>
           </div>
         </div>
 
-        {/* Page Title on Mobile (for non-dashboard pages) */}
+        {/* Mobile-only page title for non-dashboard pages */}
         {isMobile && activePage !== 'dashboard' && (
           <h1 style={{
-            fontSize: '22px',
-            marginBottom: '15px',
-            color: colors.text,
+            fontSize: '22px', marginBottom: '14px',
+            color: colors.text, fontWeight: '700',
           }}>
-            {activePage.charAt(0).toUpperCase() + activePage.slice(1).replace(/([A-Z])/g, ' $1')}
+            {pageTitle.replace(/([A-Z])/g, ' $1').trim()}
           </h1>
         )}
 
@@ -566,36 +520,102 @@ function App() {
           />
         )}
         {activePage === 'send' && (
-          <SendMoney balance={balance} addTransaction={addTransaction} formatCurrency={formatCurrency} colors={colors} />
+          <SendMoney
+            balance={balance}
+            addTransaction={addTransaction}
+            formatCurrency={formatCurrency}
+            colors={colors}
+            requirePin={requirePin}
+            showToast={showToast}
+          />
         )}
         {activePage === 'airtime' && (
-          <Airtime balance={balance} addTransaction={addTransaction} formatCurrency={formatCurrency} colors={colors} />
+          <Airtime
+            balance={balance}
+            addTransaction={addTransaction}
+            formatCurrency={formatCurrency}
+            colors={colors}
+            requirePin={requirePin}
+            showToast={showToast}
+          />
         )}
         {activePage === 'bills' && (
-          <Bills balance={balance} addTransaction={addTransaction} formatCurrency={formatCurrency} colors={colors} />
+          <Bills
+            balance={balance}
+            addTransaction={addTransaction}
+            formatCurrency={formatCurrency}
+            colors={colors}
+            requirePin={requirePin}
+            showToast={showToast}
+          />
         )}
         {activePage === 'account' && (
-          <Account balance={balance} formatCurrency={formatCurrency} colors={colors} userName={userName} />
+          <Account
+            balance={balance}
+            formatCurrency={formatCurrency}
+            colors={colors}
+            userName={userName}
+            showToast={showToast}
+          />
         )}
         {activePage === 'transactions' && (
-          <Transactions transactions={transactions} formatCurrency={formatCurrency} colors={colors} />
+          <Transactions
+            transactions={transactions}
+            formatCurrency={formatCurrency}
+            colors={colors}
+          />
         )}
         {activePage === 'savings' && (
-          <Savings balance={balance} addTransaction={addTransaction} formatCurrency={formatCurrency} colors={colors} />
+          <Savings
+            balance={balance}
+            addTransaction={addTransaction}
+            formatCurrency={formatCurrency}
+            colors={colors}
+            savingsGoals={savingsGoals}
+            updateSavingsGoals={updateSavingsGoals}
+            requirePin={requirePin}
+            showToast={showToast}
+          />
         )}
         {activePage === 'settings' && (
           <Settings
             isDarkMode={isDarkMode}
-            setIsDarkMode={setIsDarkMode}
+            setIsDarkMode={(v) => toggleDarkMode()}
             colors={colors}
             handleLogout={handleLogout}
             currency={currency}
             setCurrency={setCurrency}
             userName={userName}
             setUserName={setUserName}
+            showToast={showToast}
           />
         )}
       </div>
+
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <BottomNav
+          activePage={activePage}
+          setActivePage={setActivePage}
+          onMore={() => setSidebarOpen(true)}
+          colors={colors}
+        />
+      )}
+
+      {/* Global PIN gate */}
+      <PinModal
+        isOpen={pinConfig.isOpen}
+        onClose={closePin}
+        onSuccess={() => {
+          const cb = pinConfig.onSuccess;
+          closePin();
+          if (typeof cb === 'function') cb();
+        }}
+        verifyPin={verifyPin}
+        colors={colors}
+        title={pinConfig.title || 'Enter Transaction PIN'}
+        subtitle={pinConfig.subtitle || 'Authorize this transaction with your 4-digit PIN'}
+      />
     </div>
   );
 }
